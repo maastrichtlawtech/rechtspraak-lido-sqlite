@@ -19,8 +19,9 @@ from tqdm import tqdm
 # Predicate → column mapping
 # ---------------------------------------------------------------------------
 
-# Subjects of interest: http://deeplink.rechtspraak.nl/uitspraak?id={ECLI}
-CASE_SUBJECT_MARKER = "deeplink.rechtspraak.nl/uitspraak"
+# Subjects of interest: https://linkeddata.overheid.nl/terms/jurisprudentie/id/{ECLI}
+# The ECLI is the final path segment, e.g. ECLI:NL:HR:1998:AA9342
+CASE_SUBJECT_MARKER = "linkeddata.overheid.nl/terms/jurisprudentie/id/"
 
 PREDICATE_MAP: dict[str, str] = {
     "http://purl.org/dc/terms/identifier":        "ecli",
@@ -71,9 +72,11 @@ _INSERT_SQL = (
 def _subject_to_row(subject_uri: str, triples: dict[str, list[str]]) -> tuple | None:
     """Convert an accumulated subject dict to an INSERT row tuple, or None to skip."""
     ecli_values = triples.get("ecli", [])
-    if not ecli_values:
+    # Fall back to extracting the ECLI from the subject URI's last path segment
+    # e.g. https://linkeddata.overheid.nl/terms/jurisprudentie/id/ECLI:NL:HR:1998:AA9342
+    ecli = ecli_values[0] if ecli_values else subject_uri.rsplit("/", 1)[-1]
+    if not ecli.startswith("ECLI:"):
         return None
-    ecli = ecli_values[0]
 
     def single(col: str) -> str:
         vals = triples.get(col, [])
