@@ -142,23 +142,55 @@ def _flush(conn: sqlite3.Connection, pending: dict[str, dict[str, list[str]]]) -
 
 TTL_BASE_IRI = "https://linkeddata.overheid.nl/"
 
-_CONVERTERS: list[list[str]] = [
-    # serdi (serd): -l = lax/skip errors, -b = base IRI
-    ["serdi", "-l", "-b", TTL_BASE_IRI, "-i", "turtle", "-o", "ntriples", "-"],
-    # rapper (raptor2): -q = quiet, last positional arg is the base URI
-    ["rapper", "-q", "-i", "turtle", "-o", "ntriples", "-", TTL_BASE_IRI],
+# Each entry is (tool_binary, args_template) where {base} is replaced at runtime.
+# We probe each tool with a tiny snippet first to verify it works before committing
+# to streaming the full file through it.
+_PROBE = b"<http://example.org/s> <http://example.org/p> <http://example.org/o> .\n"
+
+_CONVERTER_TEMPLATES: list[list[str]] = [
+    # serdi (serd ≥ 0.30): -l = lax, -b = base IRI, INPUT=- means stdin
+    ["serdi", "-l", "-b", "{base}", "-i", "turtle", "-o", "ntriples", "-"],
+    # serdi without explicit format flags (older versions / auto-detect)
+    ["serdi", "-l", "-"],
+    # rapper (raptor2): -q = quiet, FILE=- means stdin, last arg is base URI
+    ["rapper", "-q", "-i", "turtle", "-o", "ntriples", "-", "{base}"],
 ]
 
 
+def _build_cmd(template: list[str]) -> list[str]:
+    return [a.replace("{base}", TTL_BASE_IRI) for a in template]
+
+
+def _probe(cmd: list[str]) -> bool:
+    """Return True if the command can parse a trivial N-Triple snippet."""
+    try:
+        result = subprocess.run(
+            cmd,
+            input=_PROBE,
+            capture_output=True,
+            timeout=10,
+        )
+        return result.returncode == 0 and b"example.org" in result.stdout
+    except Exception:
+        return False
+
+
 def _find_converter() -> list[str]:
-    """Return the command list for the first available TTL→N-Triples converter."""
-    for cmd in _CONVERTERS:
-        if shutil.which(cmd[0]):
+    """Return the first working converter command, probed with a tiny test."""
+    for template in _CONVERTER_TEMPLATES:
+        binary = template[0]
+        if not shutil.which(binary):
+            continue
+        cmd = _build_cmd(template)
+        if _probe(cmd):
             return cmd
-    tools = ", ".join(c[0] for c in _CONVERTERS)
+        # Binary exists but probe failed — keep trying other templates for
+        # the same binary (e.g., the no-flag serdi variant).
+
+    tools = sorted({t[0] for t in _CONVERTER_TEMPLATES})
     raise RuntimeError(
-        f"None of [{tools}] found on PATH.\n"
-        "Install one to convert the Turtle source file:\n"
+        f"No working TTL→N-Triples converter found (tried: {tools}).\n"
+        "Install one:\n"
         "  macOS:  brew install serd        # provides serdi\n"
         "          brew install raptor       # provides rapper\n"
         "  Ubuntu: sudo apt install serd\n"
@@ -169,29 +201,54 @@ def _find_converter() -> list[str]:
 def _iter_ntriples(ttl_gz_path: Path) -> Iterator[bytes]:
     """Yield raw N-Triple lines by piping the decompressed TTL through a converter."""
     cmd = _find_converter()
+    print(f"Using converter: {' '.join(cmd)}", file=sys.stderr)
+
+    stderr_chunks: list[bytes] = []
 
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,   # lax-mode warnings go here; suppress them
+        stderr=subprocess.PIPE,
     )
 
     def _feed() -> None:
         assert proc.stdin is not None
-        with gzip.open(ttl_gz_path, "rb") as fh:
-            while chunk := fh.read(1 << 20):
-                proc.stdin.write(chunk)
-        proc.stdin.close()
+        try:
+            with gzip.open(ttl_gz_path, "rb") as fh:
+                while chunk := fh.read(1 << 20):
+                    proc.stdin.write(chunk)
+        except BrokenPipeError:
+            pass  # subprocess exited early; stderr will explain why
+        finally:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+
+    def _drain_stderr() -> None:
+        assert proc.stderr is not None
+        stderr_chunks.append(proc.stderr.read())
 
     feeder = threading.Thread(target=_feed, daemon=True)
+    drainer = threading.Thread(target=_drain_stderr, daemon=True)
     feeder.start()
+    drainer.start()
 
     assert proc.stdout is not None
     yield from proc.stdout
 
     proc.wait()
     feeder.join()
+    drainer.join()
+
+    if proc.returncode not in (0, 1):  # raptor exits 1 on warnings; that's fine
+        stderr_text = b"".join(stderr_chunks).decode(errors="replace").strip()
+        raise RuntimeError(
+            f"Converter exited with code {proc.returncode}.\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"Stderr: {stderr_text[:1000] or '(empty)'}"
+        )
 
 
 # ---------------------------------------------------------------------------
