@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import io
 import sqlite3
 import sys
 from collections import defaultdict
@@ -156,6 +157,56 @@ def _flush(conn: sqlite3.Connection, pending: dict[str, dict[str, list[str]]]) -
 
 
 # ---------------------------------------------------------------------------
+# Sanitized stream: fix invalid Turtle escape sequences in lido-export.ttl.gz
+# ---------------------------------------------------------------------------
+
+class _SanitizedGzipStream(io.RawIOBase):
+    """Decompresses a gzip file and removes invalid Turtle escape sequences.
+
+    The lido-export.ttl.gz file contains \\> which is not a valid Turtle escape.
+    This wrapper replaces \\> with > on the fly so pyoxigraph can parse the file.
+    A one-byte tail is carried between reads to avoid splitting the two-byte
+    sequence \\> across chunk boundaries.
+    """
+
+    _CHUNK = 1 << 20  # 1 MB raw reads
+
+    def __init__(self, path: Path) -> None:
+        self._fh = gzip.open(path, "rb")
+        self._buf = bytearray()
+        self._tail = b""
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, b: bytearray) -> int:  # type: ignore[override]
+        while len(self._buf) < len(b):
+            raw = self._fh.read(self._CHUNK)
+            if not raw:
+                if self._tail:
+                    self._buf.extend(self._tail)
+                    self._tail = b""
+                break
+            combined = self._tail + raw
+            # Keep the trailing backslash in case the next chunk starts with >
+            if combined.endswith(b"\\"):
+                self._tail = b"\\"
+                combined = combined[:-1]
+            else:
+                self._tail = b""
+            self._buf.extend(combined.replace(b"\\>", b">"))
+
+        n = min(len(b), len(self._buf))
+        b[:n] = self._buf[:n]
+        del self._buf[:n]
+        return n
+
+    def close(self) -> None:
+        self._fh.close()
+        super().close()
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -173,8 +224,9 @@ def parse_into_db(ttl_gz_path: Path, db_path: Path) -> None:
     total_written = 0
     unknown_predicates: set[str] = set()
 
-    with gzip.open(ttl_gz_path, "rb") as fh:
-        triples_iter = pyoxigraph.parse(fh, pyoxigraph.RdfFormat.TURTLE, base_iri=TTL_BASE_IRI)
+    stream = io.BufferedReader(_SanitizedGzipStream(ttl_gz_path))
+    with stream:
+        triples_iter = pyoxigraph.parse(stream, pyoxigraph.RdfFormat.TURTLE, base_iri=TTL_BASE_IRI)
 
         with tqdm(unit=" triples", desc="Parsing", file=sys.stderr) as bar:
             for triple in triples_iter:
