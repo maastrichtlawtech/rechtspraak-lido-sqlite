@@ -174,7 +174,7 @@ def parse_into_db(ttl_gz_path: Path, db_path: Path) -> None:
     unknown_predicates: set[str] = set()
 
     with gzip.open(ttl_gz_path, "rb") as fh:
-        triples_iter = pyoxigraph.parse(fh, mime_type="text/turtle", base_iri=TTL_BASE_IRI)
+        triples_iter = pyoxigraph.parse(fh, pyoxigraph.RdfFormat.TURTLE, base_iri=TTL_BASE_IRI)
 
         with tqdm(unit=" triples", desc="Parsing", file=sys.stderr) as bar:
             for triple in triples_iter:
