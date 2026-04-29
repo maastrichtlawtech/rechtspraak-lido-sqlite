@@ -24,23 +24,32 @@ from tqdm import tqdm
 CASE_SUBJECT_MARKER = "linkeddata.overheid.nl/terms/jurisprudentie/id/"
 
 PREDICATE_MAP: dict[str, str] = {
-    "http://purl.org/dc/terms/identifier":        "ecli",
-    "http://purl.org/dc/terms/creator":           "instance",
-    "http://purl.org/dc/terms/date":              "date_decision",
-    "http://purl.org/dc/terms/issued":            "date_publication",
-    "http://purl.org/dc/terms/type":              "document_type",
-    "http://purl.org/dc/terms/language":          "language",
-    "http://purl.org/dc/terms/spatial":           "jurisdiction_city",
-    "http://purl.org/dc/terms/title":             "title",
-    "http://purl.org/dc/terms/description":       "info",
-    "http://purl.org/dc/terms/hasVersion":        "alternative_publications",
-    "http://purl.org/dc/terms/relation":          "citing",
-    "http://purl.org/dc/terms/references":        "legislations_cited",
-    "http://purl.org/dc/terms/subject":           "domains",
-    "http://psi.rechtspraak.nl/zaaknummer":       "case_number",
-    "http://psi.rechtspraak.nl/procedure":        "procedure_type",
-    "http://psi.rechtspraak.nl/inhoudsindicatie": "summary",
-    "http://psi.rechtspraak.nl/uitspraak":        "full_text",
+    # Dublin Core terms — present on case subjects
+    "http://purl.org/dc/terms/identifier":   "ecli",
+    "http://purl.org/dc/terms/creator":      "instance",
+    "http://purl.org/dc/terms/issued":       "date_publication",
+    "http://purl.org/dc/terms/language":     "language",
+    "http://purl.org/dc/terms/spatial":      "jurisdiction_city",
+    "http://purl.org/dc/terms/title":        "title",
+    "http://purl.org/dc/terms/hasVersion":   "alternative_publications",
+    "http://purl.org/dc/terms/type":         "document_type",
+    "http://purl.org/dc/terms/isReplacedBy": "predecessor_successor_cases",
+    "http://purl.org/dc/terms/replaces":     "predecessor_successor_cases",
+
+    # Lido-specific predicates (confirmed from unknown-predicates output)
+    "http://linkeddata.overheid.nl/terms/heeftUitspraakdatum": "date_decision",
+    "http://linkeddata.overheid.nl/terms/heeftZaaknummer":     "case_number",
+    "http://linkeddata.overheid.nl/terms/heeftProceduresoort": "procedure_type",
+    "http://linkeddata.overheid.nl/terms/heeftRechtsgebied":   "domains",
+    "http://linkeddata.overheid.nl/terms/linkt":               "legislations_cited",
+    "http://linkeddata.overheid.nl/terms/refereertAan":        "citing",
+    "http://linkeddata.overheid.nl/terms/heeftBron":           "info",
+
+    # LX (alternate lido) predicates
+    "http://linkeddata.overheid.nl/lx/creator":        "instance",
+    "http://linkeddata.overheid.nl/lx/date":           "date_decision",
+    "http://linkeddata.overheid.nl/lx/hasVersion":     "alternative_publications",
+    "http://linkeddata.overheid.nl/lx/heeftZaaknummer": "case_number",
 }
 
 
@@ -286,11 +295,17 @@ def parse_into_db(ttl_gz_path: Path, db_path: Path) -> None:
                 continue
 
             for triple in triples:
-                subject = str(triple.subject)
+                # Use .value to get the bare IRI string; str() returns "<iri>" in pyoxigraph
+                subject = triple.subject.value
                 if CASE_SUBJECT_MARKER not in subject:
                     continue
 
-                predicate = str(triple.predicate)
+                # Ensure the subject is tracked even if no predicate maps to a column,
+                # so _subject_to_row can still derive the ECLI from the URI.
+                if subject not in pending:
+                    pending[subject] = defaultdict(list)
+
+                predicate = triple.predicate.value
                 column = PREDICATE_MAP.get(predicate)
                 if column is None:
                     unknown_predicates.add(predicate)
@@ -300,8 +315,6 @@ def parse_into_db(ttl_gz_path: Path, db_path: Path) -> None:
                 if not value:
                     continue
 
-                if subject not in pending:
-                    pending[subject] = defaultdict(list)
                 pending[subject][column].append(value)
 
             if len(pending) >= BATCH_SIZE:
