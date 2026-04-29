@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import gzip
-import io
+import shutil
 import sqlite3
+import subprocess
 import sys
+import threading
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import pyoxigraph
 from tqdm import tqdm
@@ -20,62 +22,32 @@ from tqdm import tqdm
 # Subjects of interest: http://deeplink.rechtspraak.nl/uitspraak?id={ECLI}
 CASE_SUBJECT_MARKER = "deeplink.rechtspraak.nl/uitspraak"
 
-# Multi-valued predicates: values are joined with "\n" (matching GROUP_CONCAT separator
-# used by the SPARQL query in rechtspraak-extractor).
-# Single-valued predicates: last seen value wins (equivalent to SPARQL MAX).
-MULTI_VALUE_PREDICATES: set[str] = {
-    "http://purl.org/dc/terms/creator",
-    "http://purl.org/dc/terms/hasVersion",
-    "http://purl.org/dc/terms/relation",
-    "http://purl.org/dc/terms/references",
-    "http://purl.org/dc/terms/subject",
-    "http://psi.rechtspraak.nl/zaaknummer",
-    "http://psi.rechtspraak.nl/procedure",
-}
-
-# Maps predicate URI → metadata column name.
-# A predicate listed under MULTI_VALUE_PREDICATES will accumulate a list;
-# all others are treated as single-valued.
 PREDICATE_MAP: dict[str, str] = {
-    "http://purl.org/dc/terms/identifier":      "ecli",
-    "http://purl.org/dc/terms/creator":         "instance",
-    "http://purl.org/dc/terms/date":            "date_decision",
-    "http://purl.org/dc/terms/issued":          "date_publication",
-    "http://purl.org/dc/terms/type":            "document_type",
-    "http://purl.org/dc/terms/language":        "language",
-    "http://purl.org/dc/terms/spatial":         "jurisdiction_city",
-    "http://purl.org/dc/terms/title":           "title",
-    "http://purl.org/dc/terms/description":     "info",
-    "http://purl.org/dc/terms/hasVersion":      "alternative_publications",
-    "http://purl.org/dc/terms/relation":        "citing",
-    "http://purl.org/dc/terms/references":      "legislations_cited",
-    "http://purl.org/dc/terms/subject":         "domains",
-    "http://psi.rechtspraak.nl/zaaknummer":     "case_number",
-    "http://psi.rechtspraak.nl/procedure":      "procedure_type",
+    "http://purl.org/dc/terms/identifier":        "ecli",
+    "http://purl.org/dc/terms/creator":           "instance",
+    "http://purl.org/dc/terms/date":              "date_decision",
+    "http://purl.org/dc/terms/issued":            "date_publication",
+    "http://purl.org/dc/terms/type":              "document_type",
+    "http://purl.org/dc/terms/language":          "language",
+    "http://purl.org/dc/terms/spatial":           "jurisdiction_city",
+    "http://purl.org/dc/terms/title":             "title",
+    "http://purl.org/dc/terms/description":       "info",
+    "http://purl.org/dc/terms/hasVersion":        "alternative_publications",
+    "http://purl.org/dc/terms/relation":          "citing",
+    "http://purl.org/dc/terms/references":        "legislations_cited",
+    "http://purl.org/dc/terms/subject":           "domains",
+    "http://psi.rechtspraak.nl/zaaknummer":       "case_number",
+    "http://psi.rechtspraak.nl/procedure":        "procedure_type",
     "http://psi.rechtspraak.nl/inhoudsindicatie": "summary",
-    "http://psi.rechtspraak.nl/uitspraak":      "full_text",
-}
-
-# Columns with static values (not derived from predicates)
-STATIC_COLUMNS: dict[str, str] = {
-    "source": "Rechtspraak",
+    "http://psi.rechtspraak.nl/uitspraak":        "full_text",
 }
 
 
 def _extract_value(obj: Any) -> str:
-    """Return the string value of an RDF term, stripping datatype/language metadata."""
-    value = str(obj)
-    # pyoxigraph Literal.__str__ includes the full N-Triples representation for
-    # typed/lang literals, e.g. "text"@nl or "2023-01-01"^^xsd:date.
-    # We want only the lexical value.
+    """Return the lexical value of an RDF term."""
     if hasattr(obj, "value"):
         return obj.value
-    return value
-
-
-def _accumulator() -> dict[str, Any]:
-    """Return an empty per-subject accumulator."""
-    return defaultdict(list)
+    return str(obj)
 
 
 # ---------------------------------------------------------------------------
@@ -157,91 +129,69 @@ def _flush(conn: sqlite3.Connection, pending: dict[str, dict[str, list[str]]]) -
 
 
 # ---------------------------------------------------------------------------
-# Sanitized stream: fix invalid Turtle escape sequences in lido-export.ttl.gz
+# N-Triples conversion via rapper or serdi
+#
+# The lido-export.ttl.gz file contains systematic Turtle syntax violations
+# (invalid escape sequences, bare colons, non-IRI characters) that a strict
+# parser cannot handle.  The same issue is documented in the case-law-explorer
+# Airflow DAG, which pipes the file through `serdi -l` (lax mode) before
+# parsing.  We do the same here: convert to N-Triples using an external tool
+# that tolerates errors, then parse each N-Triple independently so a single
+# bad line never aborts the whole run.
 # ---------------------------------------------------------------------------
 
-def _sanitize_line(line: bytes) -> bytes:
-    """Fix known Turtle syntax issues in a single line.
+TTL_BASE_IRI = "https://linkeddata.overheid.nl/"
 
-    The lido-export.ttl.gz file contains two classes of problems:
-    - ``\\>`` inside IRI references  ``<…>``  — should be ``%3E`` (percent-encoded)
-    - ``\\>`` inside string literals ``"…"``  — should be ``>`` (drop the backslash)
-    - Space characters inside IRI references — should be ``%20``
-
-    A context-aware byte scan avoids the naive global replacement that broke URIs
-    (replacing ``\\>`` with ``>`` everywhere caused ``<uri\\>rest>`` to be split into
-    ``<uri>`` followed by the bare text ``rest>``, which the Turtle parser then tried
-    to interpret as the undeclared prefix ``http:``).
-    """
-    out = bytearray()
-    i = 0
-    n = len(line)
-    in_uri = False     # inside <…>
-    in_str = False     # inside "…" or '…' (single-line only)
-    str_delim = 0      # ord of the opening quote
-
-    while i < n:
-        c = line[i]
-
-        if in_uri:
-            if c == ord("\\") and i + 1 < n and line[i + 1] == ord(">"):
-                out.extend(b"%3E")   # \> inside URI → %3E
-                i += 2
-                continue
-            elif c == ord(">"):
-                in_uri = False
-            elif c == ord(" "):
-                out.extend(b"%20")   # space inside URI → %20
-                i += 1
-                continue
-        elif in_str:
-            if c == ord("\\") and i + 1 < n:
-                nc = line[i + 1]
-                if nc == ord(">"):
-                    out.append(ord(">"))   # \> inside literal → >
-                    i += 2
-                    continue
-                # All other valid Turtle escapes pass through unchanged.
-            elif c == str_delim:
-                in_str = False
-        else:
-            if c == ord("<"):
-                in_uri = True
-            elif c in (ord('"'), ord("'")):
-                in_str = True
-                str_delim = c
-
-        out.append(c)
-        i += 1
-
-    return bytes(out)
+_CONVERTERS: list[list[str]] = [
+    # serdi (serd): -l = lax/skip errors, -b = base IRI
+    ["serdi", "-l", "-b", TTL_BASE_IRI, "-i", "turtle", "-o", "ntriples", "-"],
+    # rapper (raptor2): -q = quiet, last positional arg is the base URI
+    ["rapper", "-q", "-i", "turtle", "-o", "ntriples", "-", TTL_BASE_IRI],
+]
 
 
-class _SanitizedGzipStream(io.RawIOBase):
-    """Decompresses a gzip file and applies per-line Turtle sanitization."""
+def _find_converter() -> list[str]:
+    """Return the command list for the first available TTL→N-Triples converter."""
+    for cmd in _CONVERTERS:
+        if shutil.which(cmd[0]):
+            return cmd
+    tools = ", ".join(c[0] for c in _CONVERTERS)
+    raise RuntimeError(
+        f"None of [{tools}] found on PATH.\n"
+        "Install one to convert the Turtle source file:\n"
+        "  macOS:  brew install serd        # provides serdi\n"
+        "          brew install raptor       # provides rapper\n"
+        "  Ubuntu: sudo apt install serd\n"
+        "          sudo apt install raptor2-utils\n"
+    )
 
-    def __init__(self, path: Path) -> None:
-        self._fh = gzip.open(path, "rb")
-        self._buf = bytearray()
 
-    def readable(self) -> bool:
-        return True
+def _iter_ntriples(ttl_gz_path: Path) -> Iterator[bytes]:
+    """Yield raw N-Triple lines by piping the decompressed TTL through a converter."""
+    cmd = _find_converter()
 
-    def readinto(self, b: bytearray) -> int:  # type: ignore[override]
-        while len(self._buf) < len(b):
-            line = self._fh.readline()
-            if not line:
-                break
-            self._buf.extend(_sanitize_line(line))
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,   # lax-mode warnings go here; suppress them
+    )
 
-        n = min(len(b), len(self._buf))
-        b[:n] = self._buf[:n]
-        del self._buf[:n]
-        return n
+    def _feed() -> None:
+        assert proc.stdin is not None
+        with gzip.open(ttl_gz_path, "rb") as fh:
+            while chunk := fh.read(1 << 20):
+                proc.stdin.write(chunk)
+        proc.stdin.close()
 
-    def close(self) -> None:
-        self._fh.close()
-        super().close()
+    feeder = threading.Thread(target=_feed, daemon=True)
+    feeder.start()
+
+    assert proc.stdout is not None
+    yield from proc.stdout
+
+    proc.wait()
+    feeder.join()
 
 
 # ---------------------------------------------------------------------------
@@ -249,11 +199,10 @@ class _SanitizedGzipStream(io.RawIOBase):
 # ---------------------------------------------------------------------------
 
 BATCH_SIZE = 10_000
-TTL_BASE_IRI = "https://linkeddata.overheid.nl/"
 
 
 def parse_into_db(ttl_gz_path: Path, db_path: Path) -> None:
-    """Stream-parse *ttl_gz_path* and populate the metadata table in *db_path*."""
+    """Convert *ttl_gz_path* to N-Triples and insert case metadata into *db_path*."""
     conn = sqlite3.connect(db_path)
     schema_sql = (Path(__file__).parent / "schema.sql").read_text()
     conn.executescript(schema_sql)
@@ -261,15 +210,22 @@ def parse_into_db(ttl_gz_path: Path, db_path: Path) -> None:
     pending: dict[str, dict[str, list[str]]] = {}
     total_written = 0
     unknown_predicates: set[str] = set()
+    skipped_lines = 0
 
-    stream = io.BufferedReader(_SanitizedGzipStream(ttl_gz_path))
-    with stream:
-        triples_iter = pyoxigraph.parse(stream, pyoxigraph.RdfFormat.TURTLE, base_iri=TTL_BASE_IRI)
+    with tqdm(unit=" lines", desc="Parsing", file=sys.stderr) as bar:
+        for raw_line in _iter_ntriples(ttl_gz_path):
+            bar.update(1)
+            line = raw_line.strip()
+            if not line or line.startswith(b"#"):
+                continue
 
-        with tqdm(unit=" triples", desc="Parsing", file=sys.stderr) as bar:
-            for triple in triples_iter:
-                bar.update(1)
+            try:
+                triples = list(pyoxigraph.parse(line, pyoxigraph.RdfFormat.N_TRIPLES))
+            except Exception:
+                skipped_lines += 1
+                continue
 
+            for triple in triples:
                 subject = str(triple.subject)
                 if CASE_SUBJECT_MARKER not in subject:
                     continue
@@ -288,15 +244,17 @@ def parse_into_db(ttl_gz_path: Path, db_path: Path) -> None:
                     pending[subject] = defaultdict(list)
                 pending[subject][column].append(value)
 
-                if len(pending) >= BATCH_SIZE:
-                    total_written += _flush(conn, pending)
-                    pending.clear()
+            if len(pending) >= BATCH_SIZE:
+                total_written += _flush(conn, pending)
+                pending.clear()
 
     if pending:
         total_written += _flush(conn, pending)
 
     conn.close()
     print(f"Inserted {total_written:,} rows into {db_path}", file=sys.stderr)
+    if skipped_lines:
+        print(f"Skipped {skipped_lines:,} unparseable N-Triple lines", file=sys.stderr)
 
     if unknown_predicates:
         print(

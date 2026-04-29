@@ -8,3 +8,8 @@ dependencies = [
     "tqdm",
     "requests",
 ]
+
+# System dependency required for TTL → N-Triples conversion (the source file
+# contains syntax violations that strict parsers reject):
+#   macOS:  brew install serd   or   brew install raptor
+#   Ubuntu: sudo apt install serd   or   sudo apt install raptor2-utils
