@@ -160,41 +160,79 @@ def _flush(conn: sqlite3.Connection, pending: dict[str, dict[str, list[str]]]) -
 # Sanitized stream: fix invalid Turtle escape sequences in lido-export.ttl.gz
 # ---------------------------------------------------------------------------
 
-class _SanitizedGzipStream(io.RawIOBase):
-    """Decompresses a gzip file and removes invalid Turtle escape sequences.
+def _sanitize_line(line: bytes) -> bytes:
+    """Fix known Turtle syntax issues in a single line.
 
-    The lido-export.ttl.gz file contains \\> which is not a valid Turtle escape.
-    This wrapper replaces \\> with > on the fly so pyoxigraph can parse the file.
-    A one-byte tail is carried between reads to avoid splitting the two-byte
-    sequence \\> across chunk boundaries.
+    The lido-export.ttl.gz file contains two classes of problems:
+    - ``\\>`` inside IRI references  ``<…>``  — should be ``%3E`` (percent-encoded)
+    - ``\\>`` inside string literals ``"…"``  — should be ``>`` (drop the backslash)
+    - Space characters inside IRI references — should be ``%20``
+
+    A context-aware byte scan avoids the naive global replacement that broke URIs
+    (replacing ``\\>`` with ``>`` everywhere caused ``<uri\\>rest>`` to be split into
+    ``<uri>`` followed by the bare text ``rest>``, which the Turtle parser then tried
+    to interpret as the undeclared prefix ``http:``).
     """
+    out = bytearray()
+    i = 0
+    n = len(line)
+    in_uri = False     # inside <…>
+    in_str = False     # inside "…" or '…' (single-line only)
+    str_delim = 0      # ord of the opening quote
 
-    _CHUNK = 1 << 20  # 1 MB raw reads
+    while i < n:
+        c = line[i]
+
+        if in_uri:
+            if c == ord("\\") and i + 1 < n and line[i + 1] == ord(">"):
+                out.extend(b"%3E")   # \> inside URI → %3E
+                i += 2
+                continue
+            elif c == ord(">"):
+                in_uri = False
+            elif c == ord(" "):
+                out.extend(b"%20")   # space inside URI → %20
+                i += 1
+                continue
+        elif in_str:
+            if c == ord("\\") and i + 1 < n:
+                nc = line[i + 1]
+                if nc == ord(">"):
+                    out.append(ord(">"))   # \> inside literal → >
+                    i += 2
+                    continue
+                # All other valid Turtle escapes pass through unchanged.
+            elif c == str_delim:
+                in_str = False
+        else:
+            if c == ord("<"):
+                in_uri = True
+            elif c in (ord('"'), ord("'")):
+                in_str = True
+                str_delim = c
+
+        out.append(c)
+        i += 1
+
+    return bytes(out)
+
+
+class _SanitizedGzipStream(io.RawIOBase):
+    """Decompresses a gzip file and applies per-line Turtle sanitization."""
 
     def __init__(self, path: Path) -> None:
         self._fh = gzip.open(path, "rb")
         self._buf = bytearray()
-        self._tail = b""
 
     def readable(self) -> bool:
         return True
 
     def readinto(self, b: bytearray) -> int:  # type: ignore[override]
         while len(self._buf) < len(b):
-            raw = self._fh.read(self._CHUNK)
-            if not raw:
-                if self._tail:
-                    self._buf.extend(self._tail)
-                    self._tail = b""
+            line = self._fh.readline()
+            if not line:
                 break
-            combined = self._tail + raw
-            # Keep the trailing backslash in case the next chunk starts with >
-            if combined.endswith(b"\\"):
-                self._tail = b"\\"
-                combined = combined[:-1]
-            else:
-                self._tail = b""
-            self._buf.extend(combined.replace(b"\\>", b">"))
+            self._buf.extend(_sanitize_line(line))
 
         n = min(len(b), len(self._buf))
         b[:n] = self._buf[:n]
