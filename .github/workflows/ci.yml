@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  lint-and-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package and dependencies
+        run: pip install -e .
+
+      - name: Check syntax (py_compile)
+        run: |
+          python -m py_compile build_lido_sqlite.py
+          python -m py_compile inspect_lido.py
+          python -m py_compile test_query.py
+          python -m py_compile src/download.py
+          python -m py_compile src/parse.py
+
+      - name: Verify imports resolve
+        run: |
+          python -c "from src.download import download"
+          python -c "from src.parse import PREDICATE_MAP, CASE_SUBJECT_MARKER, parse_into_db"
+
+      - name: Verify schema.sql is valid SQLite
+        run: |
+          python - <<'EOF'
+          import sqlite3, pathlib
+          sql = pathlib.Path("src/schema.sql").read_text()
+          conn = sqlite3.connect(":memory:")
+          conn.executescript(sql)
+          row = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone()
+          assert row and row[0] == "metadata", f"Expected 'metadata' table, got {row}"
+          cols = [c[1] for c in conn.execute("PRAGMA table_info(metadata)")]
+          required = {"ecli", "date_decision", "instance", "domains", "full_text", "source"}
+          missing = required - set(cols)
+          assert not missing, f"Missing columns: {missing}"
+          print("Schema OK:", cols)
+          EOF
+
+      - name: Verify predicate map keys are valid IRIs
+        run: |
+          python - <<'EOF'
+          from src.parse import PREDICATE_MAP, CASE_SUBJECT_MARKER
+          assert CASE_SUBJECT_MARKER, "CASE_SUBJECT_MARKER must not be empty"
+          for iri in PREDICATE_MAP:
+              assert iri.startswith("http"), f"Expected IRI, got: {iri!r}"
+          print(f"PREDICATE_MAP has {len(PREDICATE_MAP)} entries — OK")
+          EOF

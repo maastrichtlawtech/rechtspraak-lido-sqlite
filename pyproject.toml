@@ -1,13 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
 [project]
 name = "rechtspraak-self-host"
 version = "0.1.0"
 description = "Build a local SQLite database from the lido-export.ttl.gz linked-data export for use with rechtspraak-extractor"
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
+authors = [{ name = "Maastricht Law & Tech Lab", email = "shashank.chakravarthy@gmail.com" }]
+keywords = ["rechtspraak", "lido", "linked-data", "sqlite", "netherlands", "case-law"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Database",
+]
 dependencies = [
     "pyoxigraph>=0.3",
     "tqdm",
     "requests",
 ]
+
+[project.urls]
+Homepage = "https://github.com/shashankmc/rechtspraak-self-host"
+Issues = "https://github.com/shashankmc/rechtspraak-self-host/issues"
+
+[project.scripts]
+build-lido-sqlite = "build_lido_sqlite:main"
+inspect-lido      = "inspect_lido:main"
+test-lido-query   = "test_query:main"
+
+[tool.setuptools]
+py-modules = ["build_lido_sqlite", "inspect_lido", "test_query"]
+packages   = ["src"]
+
+[tool.setuptools.package-data]
+src = ["schema.sql"]
 
 # System dependency required for TTL → N-Triples conversion (the source file
 # contains syntax violations that strict parsers reject):
