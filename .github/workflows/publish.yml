@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/rechtspraak-self-host
+      url: https://pypi.org/p/rechtspraak-lido-sqlite
     permissions:
       id-token: write   # required for PyPI trusted publishing (OIDC — no API token needed)
 
