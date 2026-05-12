@@ -119,28 +119,35 @@ df = rm.fetch_eclis_via_sqlite(
 print(df.head())
 ```
 
-The `metadata` table schema matches the columns selected by `fetch_eclis_via_sqlite()`:
+The `metadata` table has 25 columns matching the `MAP_RS` keys in `rechtspraak-extractor`:
 
-| Column | Source predicate |
-|---|---|
-| `ecli` | `dcterms:identifier` |
-| `date_decision` | `lido:heeftUitspraakdatum` |
-| `date_publication` | `dcterms:issued` |
-| `instance` | `dcterms:creator` / `lx:creator` |
-| `jurisdiction_city` | `dcterms:spatial` |
-| `case_number` | `lido:heeftZaaknummer` |
-| `document_type` | `dcterms:type` |
-| `procedure_type` | `lido:heeftProceduresoort` |
-| `domains` | `lido:heeftRechtsgebied` |
-| `alternative_publications` | `dcterms:hasVersion` |
-| `title` | `dcterms:title` |
-| `citing` | `lido:refereertAan` |
-| `legislations_cited` | `lido:linkt` |
-| `predecessor_successor_cases` | `dcterms:isReplacedBy` / `dcterms:replaces` |
-| `url_publications` | constructed from ECLI |
-| `source` | `"Rechtspraak"` (static) |
-
-Columns not present in the lido export (`full_text`, `summary`, `cited_by`, `referenced_legislation_titles`) are stored as empty strings.
+| Column | Source predicate | Notes |
+|---|---|---|
+| `ecli` | `dcterms:identifier` | |
+| `issued` | `dcterms:issued` | date of publication on Rechtspraak.nl |
+| `language` | `dcterms:language` | |
+| `creator` | `dcterms:creator` / `lx:creator` | name of court |
+| `date_decision` | `lido:heeftUitspraakdatum` | date of court decision |
+| `zaaknummer` | `lido:heeftZaaknummer` | internal case number |
+| `type` | `dcterms:type` | `uitspraak` or `conclusie` |
+| `procedure` | `lido:heeftProceduresoort` | procedure type |
+| `spatial` | `dcterms:spatial` | court municipality |
+| `subject` | `lido:heeftRechtsgebied` | area of law |
+| `relation` | `dcterms:isReplacedBy` / `dcterms:replaces` | predecessor/successor cases |
+| `references` | — | applicable legislation titles; empty (not in lido) |
+| `hasVersion` | `dcterms:hasVersion` / `lx:hasVersion` | alternative publishers |
+| `link` | constructed from ECLI | deeplink to Rechtspraak.nl |
+| `title` | `dcterms:title` | |
+| `inhoudsindicatie` | — | case summary; empty (not in lido) |
+| `info` | `lido:heeftBron` | source information |
+| `full_text` | — | full case text; empty (not in lido) |
+| `jurisdiction_country` | — | country; empty (added by downstream script) |
+| `source` | — | `"Rechtspraak"` (static) |
+| `citations_incoming` | — | cases citing this case; empty (reverse relation, not in lido) |
+| `citations_outgoing` | `lido:refereertAan` | cases cited by this case |
+| `legislations_cited` | `lido:linkt` | legislation cited |
+| `summary` | — | empty (not in lido) |
+| `bwb_id` | — | BWB legislation ID; empty (not in lido) |
 
 ---
 
