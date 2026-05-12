@@ -22,7 +22,7 @@ brew install serd          # provides serdi (recommended)
 brew install raptor        # provides rapper
 
 # Ubuntu / Debian
-sudo apt install serd
+sudo apt install serdi
 # or
 sudo apt install raptor2-utils
 ```
@@ -32,14 +32,14 @@ sudo apt install raptor2-utils
 ## Installation
 
 ```bash
-pip install rechtspraak-self-host
+pip install rechtspraak-lido-sqlite
 ```
 
 Or from source:
 
 ```bash
-git clone https://github.com/shashankmc/rechtspraak-self-host
-cd rechtspraak-self-host
+git clone https://github.com/shashankmc/rechtspraak-lido-sqlite
+cd rechtspraak-lido-sqlite
 pip install -e .
 ```
 
