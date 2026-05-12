@@ -26,30 +26,30 @@ CASE_SUBJECT_MARKER = "linkeddata.overheid.nl/terms/jurisprudentie/id/"
 PREDICATE_MAP: dict[str, str] = {
     # Dublin Core terms — present on case subjects
     "http://purl.org/dc/terms/identifier":   "ecli",
-    "http://purl.org/dc/terms/creator":      "instance",
-    "http://purl.org/dc/terms/issued":       "date_publication",
+    "http://purl.org/dc/terms/creator":      "creator",
+    "http://purl.org/dc/terms/issued":       "issued",
     "http://purl.org/dc/terms/language":     "language",
-    "http://purl.org/dc/terms/spatial":      "jurisdiction_city",
+    "http://purl.org/dc/terms/spatial":      "spatial",
     "http://purl.org/dc/terms/title":        "title",
-    "http://purl.org/dc/terms/hasVersion":   "alternative_publications",
-    "http://purl.org/dc/terms/type":         "document_type",
-    "http://purl.org/dc/terms/isReplacedBy": "predecessor_successor_cases",
-    "http://purl.org/dc/terms/replaces":     "predecessor_successor_cases",
+    "http://purl.org/dc/terms/hasVersion":   "hasVersion",
+    "http://purl.org/dc/terms/type":         "type",
+    "http://purl.org/dc/terms/isReplacedBy": "relation",
+    "http://purl.org/dc/terms/replaces":     "relation",
 
     # Lido-specific predicates (confirmed from unknown-predicates output)
     "http://linkeddata.overheid.nl/terms/heeftUitspraakdatum": "date_decision",
-    "http://linkeddata.overheid.nl/terms/heeftZaaknummer":     "case_number",
-    "http://linkeddata.overheid.nl/terms/heeftProceduresoort": "procedure_type",
-    "http://linkeddata.overheid.nl/terms/heeftRechtsgebied":   "domains",
+    "http://linkeddata.overheid.nl/terms/heeftZaaknummer":     "zaaknummer",
+    "http://linkeddata.overheid.nl/terms/heeftProceduresoort": "procedure",
+    "http://linkeddata.overheid.nl/terms/heeftRechtsgebied":   "subject",
     "http://linkeddata.overheid.nl/terms/linkt":               "legislations_cited",
-    "http://linkeddata.overheid.nl/terms/refereertAan":        "citing",
+    "http://linkeddata.overheid.nl/terms/refereertAan":        "citations_outgoing",
     "http://linkeddata.overheid.nl/terms/heeftBron":           "info",
 
     # LX (alternate lido) predicates
-    "http://linkeddata.overheid.nl/lx/creator":        "instance",
+    "http://linkeddata.overheid.nl/lx/creator":        "creator",
     "http://linkeddata.overheid.nl/lx/date":           "date_decision",
-    "http://linkeddata.overheid.nl/lx/hasVersion":     "alternative_publications",
-    "http://linkeddata.overheid.nl/lx/heeftZaaknummer": "case_number",
+    "http://linkeddata.overheid.nl/lx/hasVersion":     "hasVersion",
+    "http://linkeddata.overheid.nl/lx/heeftZaaknummer": "zaaknummer",
 }
 
 
@@ -65,11 +65,11 @@ def _extract_value(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 
 _ALL_COLUMNS = [
-    "ecli", "document_type", "date_decision", "date_publication", "language",
-    "instance", "jurisdiction_city", "case_number", "procedure_type", "spatial",
-    "domains", "referenced_legislation_titles", "alternative_publications", "title",
-    "full_text", "summary", "citing", "cited_by", "legislations_cited",
-    "predecessor_successor_cases", "url_publications", "info", "source",
+    "ecli", "issued", "language", "creator", "date_decision",
+    "zaaknummer", "type", "procedure", "spatial", "subject",
+    "relation", "references", "hasVersion", "link", "title",
+    "inhoudsindicatie", "info", "full_text", "jurisdiction_country", "source",
+    "citations_incoming", "citations_outgoing", "legislations_cited", "summary", "bwb_id",
 ]
 
 _INSERT_SQL = (
@@ -98,32 +98,34 @@ def _subject_to_row(subject_uri: str, triples: dict[str, list[str]]) -> tuple | 
                 seen.append(v)
         return "\n".join(seen)
 
-    url_publications = f"https://uitspraken.rechtspraak.nl/inziendocument?id={ecli}"
+    link = f"https://uitspraken.rechtspraak.nl/inziendocument?id={ecli}"
 
     return (
         ecli,
-        single("document_type"),
-        single("date_decision"),
-        single("date_publication"),
+        single("issued"),
         single("language") or "nl",
-        joined("instance"),
-        single("jurisdiction_city"),
-        joined("case_number"),
-        joined("procedure_type"),
-        single("jurisdiction_city"),   # spatial mirrors jurisdiction_city
-        joined("domains"),
-        "",                            # referenced_legislation_titles (not in lido)
-        joined("alternative_publications"),
+        joined("creator"),
+        single("date_decision"),
+        joined("zaaknummer"),
+        single("type"),
+        joined("procedure"),
+        single("spatial"),
+        joined("subject"),
+        joined("relation"),
+        "",                            # references (not in lido)
+        joined("hasVersion"),
+        link,
         single("title"),
-        single("full_text"),
-        single("summary"),
-        joined("citing"),
-        "",                            # cited_by (reverse relation, not in lido)
-        joined("legislations_cited"),
-        "",                            # predecessor_successor_cases (not in lido)
-        url_publications,
+        "",                            # inhoudsindicatie (not in lido)
         single("info"),
+        single("full_text"),
+        "",                            # jurisdiction_country (added by downstream script)
         "Rechtspraak",
+        "",                            # citations_incoming (reverse relation, not in lido)
+        joined("citations_outgoing"),
+        joined("legislations_cited"),
+        "",                            # summary (not in lido)
+        "",                            # bwb_id (not in lido)
     )
 
 
