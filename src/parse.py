@@ -42,7 +42,7 @@ PREDICATE_MAP: dict[str, str] = {
     "http://linkeddata.overheid.nl/terms/heeftProceduresoort": "procedure",
     "http://linkeddata.overheid.nl/terms/heeftRechtsgebied":   "subject",
     "http://linkeddata.overheid.nl/terms/linkt":               "legislations_cited",
-    "http://linkeddata.overheid.nl/terms/refereertAan":        "citations_outgoing",
+    "http://linkeddata.overheid.nl/terms/refereertAan": "citations_outgoing",
     "http://linkeddata.overheid.nl/terms/heeftBron":           "info",
 
     # LX (alternate lido) predicates
@@ -69,12 +69,22 @@ _ALL_COLUMNS = [
     "zaaknummer", "type", "procedure", "spatial", "subject",
     "relation", "references", "hasVersion", "link", "title",
     "inhoudsindicatie", "info", "full_text", "jurisdiction_country", "source",
-    "citations_incoming", "citations_outgoing", "legislations_cited", "summary", "bwb_id",
+    "citations_incoming", "citations_outgoing", "legislations_cited",
+    "summary", "bwb_id",
 ]
 
+_SQL_RESERVED = frozenset({"references"})
+
+
+def _sql_col(col: str) -> str:
+    return f'"{col}"' if col in _SQL_RESERVED else col
+
+
+_COL_LIST = ", ".join(_sql_col(c) for c in _ALL_COLUMNS)
+_PLACEHOLDERS = ", ".join("?" * len(_ALL_COLUMNS))
 _INSERT_SQL = (
-    f"INSERT OR REPLACE INTO metadata ({', '.join(_ALL_COLUMNS)}) "
-    f"VALUES ({', '.join('?' * len(_ALL_COLUMNS))})"
+    f"INSERT OR REPLACE INTO metadata ({_COL_LIST}) "
+    f"VALUES ({_PLACEHOLDERS})"
 )
 
 
