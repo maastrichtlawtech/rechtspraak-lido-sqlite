@@ -41,9 +41,11 @@ def run(db_path: Path, eclis: list[str]) -> None:
             sys.exit(1)
         print(f"No ECLIs specified; sampling: {eclis}\n")
 
+    _SQL_RESERVED = frozenset({"references"})
+    sel = ", ".join(f'"{c}"' if c in _SQL_RESERVED else c for c in COLUMNS)
     placeholders = ",".join("?" * len(eclis))
     query = f"""
-        SELECT {', '.join(COLUMNS)}
+        SELECT {sel}
         FROM metadata
         WHERE ecli IN ({placeholders})
     """
