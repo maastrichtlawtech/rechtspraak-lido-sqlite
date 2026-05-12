@@ -19,11 +19,12 @@ import sys
 from pathlib import Path
 
 COLUMNS = [
-    "ecli", "date_publication", "language", "instance", "jurisdiction_city",
-    "date_decision", "case_number", "document_type", "procedure_type",
-    "domains", "referenced_legislation_titles", "alternative_publications",
-    "title", "full_text", "summary", "citing", "cited_by", "legislations_cited",
-    "predecessor_successor_cases", "url_publications", "info", "source",
+    "ecli", "issued", "language", "creator", "date_decision",
+    "zaaknummer", "type", "procedure", "spatial", "subject",
+    "relation", "references", "hasVersion", "link", "title",
+    "inhoudsindicatie", "info", "full_text", "jurisdiction_country", "source",
+    "citations_incoming", "citations_outgoing", "legislations_cited",
+    "summary", "bwb_id",
 ]
 
 
@@ -65,7 +66,10 @@ def run(db_path: Path, eclis: list[str]) -> None:
         col: conn.execute(
             f"SELECT COUNT(*) FROM metadata WHERE {col} != '' AND {col} IS NOT NULL"
         ).fetchone()[0]
-        for col in ("ecli", "instance", "date_decision", "domains", "full_text", "summary")
+        for col in (
+            "ecli", "creator", "date_decision",
+            "subject", "citations_outgoing", "full_text",
+        )
     }
     print(f"\nTotal rows in metadata: {total:,}")
     print("Fill rates for key columns:")
