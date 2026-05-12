@@ -47,7 +47,7 @@ jobs:
           row = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone()
           assert row and row[0] == "metadata", f"Expected 'metadata' table, got {row}"
           cols = [c[1] for c in conn.execute("PRAGMA table_info(metadata)")]
-          required = {"ecli", "date_decision", "instance", "domains", "full_text", "source"}
+          required = {"ecli", "date_decision", "issued", "inhoudsindicatie", "full_text", "source"}
           missing = required - set(cols)
           assert not missing, f"Missing columns: {missing}"
           print("Schema OK:", cols)
