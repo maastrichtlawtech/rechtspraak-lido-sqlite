@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS metadata (
     spatial              TEXT DEFAULT '',
     subject              TEXT DEFAULT '',
     relation             TEXT DEFAULT '',
-    references           TEXT DEFAULT '',
+    "references"         TEXT DEFAULT '',
     hasVersion           TEXT DEFAULT '',
     link                 TEXT DEFAULT '',
     title                TEXT DEFAULT '',
