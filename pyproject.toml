@@ -3,13 +3,13 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rechtspraak-self-host"
+name = "rechtspraak-lido-sqlite"
 version = "0.1.0"
 description = "Build a local SQLite database from the lido-export.ttl.gz linked-data export for use with rechtspraak-extractor"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-authors = [{ name = "Maastricht Law & Tech Lab", email = "shashank.chakravarthy@gmail.com" }]
+authors = [{ name = "Maastricht Law & Tech Lab", email = "law-techlab@maastrichtuniversity.nl" }]
 keywords = ["rechtspraak", "lido", "linked-data", "sqlite", "netherlands", "case-law"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -30,8 +30,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/shashankmc/rechtspraak-self-host"
-Issues = "https://github.com/shashankmc/rechtspraak-self-host/issues"
+Homepage = "https://github.com/maastrichtlawtech/rechtspraak-lido-sqlite"
+Issues = "https://github.com/maastrichtlawtech/rechtspraak-lido-sqlite/issues"
 
 [project.scripts]
 build-lido-sqlite = "build_lido_sqlite:main"
@@ -48,4 +48,4 @@ src = ["schema.sql"]
 # System dependency required for TTL → N-Triples conversion (the source file
 # contains syntax violations that strict parsers reject):
 #   macOS:  brew install serd   or   brew install raptor
-#   Ubuntu: sudo apt install serd   or   sudo apt install raptor2-utils
+#   Ubuntu: sudo apt install serdi   or   sudo apt install raptor2-utils
