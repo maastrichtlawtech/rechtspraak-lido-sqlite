@@ -1,4 +1,4 @@
-# rechtspraak-self-host
+# rechtspraak-ldio-sqlite
 
 Self-hosted pipeline that downloads the Dutch [LiDO linked-data export](https://linkeddata.overheid.nl/export/lido-export.ttl.gz) and converts it into a local SQLite database.
 
