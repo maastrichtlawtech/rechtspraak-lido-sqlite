@@ -1,3 +1,33 @@
+-- Adds the three columns rechtspraak_extractor==1.6.0's fetch_eclis_via_sqlite()
+-- expects but this schema didn't have: jurisdiction_city, predecessor_successor_cases,
+-- url_publications. Its SQL query (rechtspraak_metadata.py, the query inside
+-- fetch_eclis_via_sqlite) selects these three names verbatim; without them the
+-- query raises "no such column" for every lookup, which fetch_eclis_via_sqlite
+-- swallows into an empty DataFrame -- so with fallback_to_api=True every call
+-- silently falls through to the live API instead of reading this database at
+-- all, with no visible error anywhere.
+--
+-- Each of the three is a GENERATED ALWAYS AS (...) VIRTUAL column aliasing a
+-- column this schema already populates under a different name, rather than a
+-- second column requiring its own population logic in src/parse.py:
+--   jurisdiction_city          -> spatial   (court municipality, already captured)
+--   predecessor_successor_cases -> relation (dcterms:isReplacedBy/dcterms:replaces, already captured)
+--   url_publications           -> link      (constructed deeplink, already captured)
+-- This keeps one source of truth per fact and needs no change to the insert
+-- logic in src/parse.py -- generated columns can't be (and don't need to be)
+-- written to directly.
+--
+-- Requires SQLite >= 3.31 (generated columns). Ships with Python's sqlite3
+-- module on any reasonably current system; if this ever needs to run against
+-- an older SQLite, replace the three GENERATED columns with plain TEXT columns
+-- and populate them alongside their source column in src/parse.py instead.
+--
+-- Known residual gap this schema change does NOT fix: fetch_eclis_via_sqlite's
+-- query also never selects "spatial" itself (only the aliased
+-- jurisdiction_city would come through, and only once rechtspraak_extractor
+-- is on a version whose query knows to ask for it under whichever name).
+-- That part can only be fixed on the rechtspraak_extractor side.
+
 CREATE TABLE IF NOT EXISTS metadata (
     ecli                 TEXT PRIMARY KEY,
     issued               TEXT DEFAULT '',
@@ -23,5 +53,11 @@ CREATE TABLE IF NOT EXISTS metadata (
     citations_outgoing   TEXT DEFAULT '',
     legislations_cited   TEXT DEFAULT '',
     summary              TEXT DEFAULT '',
-    bwb_id               TEXT DEFAULT ''
+    bwb_id               TEXT DEFAULT '',
+
+    -- Added: aliases expected by rechtspraak_extractor==1.6.0's
+    -- fetch_eclis_via_sqlite() query. See file header.
+    jurisdiction_city           TEXT GENERATED ALWAYS AS (spatial) VIRTUAL,
+    predecessor_successor_cases TEXT GENERATED ALWAYS AS (relation) VIRTUAL,
+    url_publications             TEXT GENERATED ALWAYS AS (link) VIRTUAL
 );
