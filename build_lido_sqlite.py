@@ -18,11 +18,13 @@ import argparse
 import sys
 from pathlib import Path
 
+from src.bwbidlist import build_law_aliases
 from src.download import download
 from src.parse import parse_into_db
 
 DEFAULT_INPUT = Path("data/lido-export.ttl.gz")
 DEFAULT_OUTPUT = Path("data/lido.db")
+DEFAULT_BWB_ZIP = Path("data/BWBIdList.xml.zip")
 
 
 def main() -> None:
@@ -30,6 +32,10 @@ def main() -> None:
     parser.add_argument("--input", "-i", type=Path, default=DEFAULT_INPUT, help="Path to lido-export.ttl.gz")
     parser.add_argument("--output", "-o", type=Path, default=DEFAULT_OUTPUT, help="Path to output SQLite database")
     parser.add_argument("--download", action="store_true", help="Download the source file before parsing")
+    parser.add_argument(
+        "--skip-aliases", action="store_true", help="Skip downloading/parsing BWBIdList.xml.zip"
+    )
+    parser.add_argument("--bwb-zip", type=Path, default=DEFAULT_BWB_ZIP, help="Path to BWBIdList.xml.zip")
     args = parser.parse_args()
 
     if args.download:
@@ -48,6 +54,9 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     parse_into_db(args.input, args.output)
+
+    if not args.skip_aliases:
+        build_law_aliases(args.output, args.bwb_zip)
 
 
 if __name__ == "__main__":
