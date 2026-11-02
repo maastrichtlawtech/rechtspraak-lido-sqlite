@@ -121,7 +121,11 @@ def _subject_to_row(subject_uri: str, triples: dict[str, list[str]]) -> tuple | 
     ecli_values = triples.get("ecli", [])
     # Fall back to extracting the ECLI from the subject URI's last path segment
     # e.g. https://linkeddata.overheid.nl/terms/jurisprudentie/id/ECLI:NL:HR:1998:AA9342
-    ecli = ecli_values[0] if ecli_values else subject_uri.rsplit("/", 1)[-1]
+    # A case can also have other identifiers (e.g. CELEX:...) in any order.
+    ecli = next(
+        (value for value in ecli_values if value.startswith("ECLI:")),
+        subject_uri.rsplit("/", 1)[-1],
+    )
     if not ecli.startswith("ECLI:"):
         return None
 

@@ -210,3 +210,21 @@ def test_resolve_case_law_links_is_resumable(db_conn):
     )
     assert rows["ECLI:NL:HR:2020:1"] == "ECLI:NL:HR:2011:BQ7597"  # untouched, not wiped
     assert rows["ECLI:NL:HR:2020:2"] == ""  # REF_BWB has no target=ecli entry
+
+
+def test_ecli_is_found_after_another_identifier():
+    from src.parse import _subject_to_row
+
+    subject = "http://linkeddata.overheid.nl/terms/jurisprudentie/id/ECLI:NL:HR:2022:440"
+    row = _subject_to_row(
+        subject, {"ecli": ["CELEX:62022CJ0001", "ECLI:NL:HR:2022:440"]}
+    )
+    assert row[0] == "ECLI:NL:HR:2022:440"
+
+
+def test_case_with_only_a_celex_identifier_uses_the_subject_ecli():
+    from src.parse import _subject_to_row
+
+    subject = "http://linkeddata.overheid.nl/terms/jurisprudentie/id/ECLI:EU:C:2022:1"
+    row = _subject_to_row(subject, {"ecli": ["CELEX:62022CJ0001"]})
+    assert row[0] == "ECLI:EU:C:2022:1"
