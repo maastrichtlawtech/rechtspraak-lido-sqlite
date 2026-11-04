@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rechtspraak-lido-sqlite"
-version = "0.1.1"
+version = "0.2.1"
 description = "Build a local SQLite database from the lido-export.ttl.gz linked-data export for use with rechtspraak-extractor"
 readme = "README.md"
 license = { text = "MIT" }
@@ -27,6 +27,7 @@ dependencies = [
     "pyoxigraph>=0.3",
     "tqdm",
     "requests",
+    "lxml",
 ]
 
 [project.urls]
