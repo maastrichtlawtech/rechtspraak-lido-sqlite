@@ -1,4 +1,4 @@
-"""Stream-parse lido-export.ttl.gz and insert case metadata into SQLite."""
+"""Stream-parse lido-export.nt.gz (or legacy .ttl.gz) and insert case metadata into SQLite."""
 
 from __future__ import annotations
 
@@ -489,7 +489,27 @@ def _find_converter() -> list[str]:
     )
 
 
-def _iter_ntriples(ttl_gz_path: Path) -> Iterator[bytes]:
+def _is_ntriples(path: Path) -> bool:
+    return path.name.endswith((".nt.gz", ".nt"))
+
+
+def _iter_ntriples(export_path: Path) -> Iterator[bytes]:
+    """Yield raw N-Triple lines from the export.
+
+    The current export (lido-export.nt.gz) is already N-Triples, so its lines
+    are streamed as-is; bad lines are skipped later, one at a time.  The older
+    Turtle export (lido-export.ttl.gz) is piped through a lax converter first.
+    """
+    if _is_ntriples(export_path):
+        opener = gzip.open if export_path.suffix == ".gz" else open
+        with opener(export_path, "rb") as fh:
+            yield from fh
+        return
+
+    yield from _iter_converted_turtle(export_path)
+
+
+def _iter_converted_turtle(ttl_gz_path: Path) -> Iterator[bytes]:
     """Yield raw N-Triple lines by piping the decompressed TTL through a converter."""
     cmd = _find_converter()
     print(f"Using converter: {' '.join(cmd)}", file=sys.stderr)
@@ -549,8 +569,8 @@ def _iter_ntriples(ttl_gz_path: Path) -> Iterator[bytes]:
 BATCH_SIZE = 10_000
 
 
-def parse_into_db(ttl_gz_path: Path, db_path: Path) -> None:
-    """Convert *ttl_gz_path* to N-Triples and insert case metadata into *db_path*."""
+def parse_into_db(export_path: Path, db_path: Path) -> None:
+    """Read *export_path* (.nt.gz, or legacy .ttl.gz) and insert case metadata into *db_path*."""
     conn = sqlite3.connect(db_path)
     schema_sql = (Path(__file__).parent / "schema.sql").read_text()
     conn.executescript(schema_sql)
@@ -569,7 +589,7 @@ def parse_into_db(ttl_gz_path: Path, db_path: Path) -> None:
     skipped_lines = 0
 
     with tqdm(unit=" lines", desc="Parsing", file=sys.stderr) as bar:
-        for raw_line in _iter_ntriples(ttl_gz_path):
+        for raw_line in _iter_ntriples(export_path):
             bar.update(1)
             line = raw_line.strip()
             if not line or line.startswith(b"#"):

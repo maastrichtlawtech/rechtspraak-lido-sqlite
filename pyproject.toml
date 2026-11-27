@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rechtspraak-lido-sqlite"
 version = "0.2.1"
-description = "Build a local SQLite database from the lido-export.ttl.gz linked-data export for use with rechtspraak-extractor"
+description = "Build a local SQLite database from the LiDO linked-data export (lido-export.nt.gz) for use with rechtspraak-extractor"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -46,7 +46,8 @@ packages   = ["src"]
 [tool.setuptools.package-data]
 src = ["schema.sql"]
 
-# System dependency required for TTL → N-Triples conversion (the source file
-# contains syntax violations that strict parsers reject):
+# Optional system dependency, only for the legacy lido-export.ttl.gz input
+# (TTL → N-Triples conversion; that file contains syntax violations that
+# strict parsers reject):
 #   macOS:  brew install serd   or   brew install raptor
 #   Ubuntu: sudo apt install serdi   or   sudo apt install raptor2-utils

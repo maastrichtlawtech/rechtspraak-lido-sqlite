@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Build a SQLite metadata database from the lido-export.ttl.gz linked-data file.
+"""Build a SQLite metadata database from the lido-export.nt.gz linked-data file.
 
 Usage:
     # Download and build in one step:
     python build_lido_sqlite.py --download
 
     # Build from a file you already have:
-    python build_lido_sqlite.py --input data/lido-export.ttl.gz
+    python build_lido_sqlite.py --input data/lido-export.nt.gz
 
     # Custom paths:
-    python build_lido_sqlite.py --input /path/to/lido-export.ttl.gz --output /path/to/lido.db
+    python build_lido_sqlite.py --input /path/to/lido-export.nt.gz --output /path/to/lido.db
 """
 
 from __future__ import annotations
@@ -22,14 +22,14 @@ from src.bwbidlist import build_law_aliases
 from src.download import download
 from src.parse import parse_into_db
 
-DEFAULT_INPUT = Path("data/lido-export.ttl.gz")
+DEFAULT_INPUT = Path("data/lido-export.nt.gz")
 DEFAULT_OUTPUT = Path("data/lido.db")
 DEFAULT_BWB_ZIP = Path("data/BWBIdList.xml.zip")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--input", "-i", type=Path, default=DEFAULT_INPUT, help="Path to lido-export.ttl.gz")
+    parser.add_argument("--input", "-i", type=Path, default=DEFAULT_INPUT, help="Path to lido-export.nt.gz (or legacy lido-export.ttl.gz)")
     parser.add_argument("--output", "-o", type=Path, default=DEFAULT_OUTPUT, help="Path to output SQLite database")
     parser.add_argument("--download", action="store_true", help="Download the source file before parsing")
     parser.add_argument(

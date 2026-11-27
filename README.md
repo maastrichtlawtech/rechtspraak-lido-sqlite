@@ -1,6 +1,6 @@
 # rechtspraak-ldio-sqlite
 
-Self-hosted pipeline that downloads the Dutch [LiDO linked-data export](https://linkeddata.overheid.nl/export/lido-export.ttl.gz) and converts it into a local SQLite database.
+Self-hosted pipeline that downloads the Dutch [LiDO linked-data export](https://data.overheid.nl/dataset/linked-data-overheid) (`https://linkeddata.overheid.nl/export/lido-export.nt.gz`, an N-Triples dump of about 4 GB) and converts it into a local SQLite database.
 
 The resulting database is a drop-in backend for the [`rechtspraak-extractor`](https://github.com/maastrichtlawtech/rechtspraak-extractor) package: its `fetch_eclis_via_sqlite()` function queries the `metadata` table built here, avoiding any dependency on a live SPARQL endpoint or the Rechtspraak API.
 
@@ -11,9 +11,9 @@ The resulting database is a drop-in backend for the [`rechtspraak-extractor`](ht
 | Requirement | Version | Notes |
 |---|---|---|
 | Python | ≥ 3.10 | |
-| `serdi` **or** `rapper` | any | Converts the source Turtle file to N-Triples in lax mode; required because the source file contains syntax violations that strict parsers reject |
+| `serdi` **or** `rapper` | any | Optional. Only needed to build from the legacy Turtle export (`lido-export.ttl.gz`), which contains syntax violations that strict parsers reject. The current `.nt.gz` export needs no converter |
 
-Install the system converter:
+Install the system converter (legacy `.ttl.gz` input only):
 
 ```bash
 # macOS
@@ -61,7 +61,7 @@ inspect-lido --mode cases --lines 500000
 All three commands are also available as `make` targets:
 
 ```bash
-make install-tools   # brew install serd
+make install-tools   # brew install serd (legacy .ttl.gz input only)
 make download        # download + build  →  data/lido.db
 make build           # build from an already-downloaded file
 ```
@@ -75,7 +75,7 @@ make build           # build from an already-downloaded file
 ```
 build-lido-sqlite [--input PATH] [--output PATH] [--download]
 
-  --input   PATH   Source .ttl.gz file  (default: data/lido-export.ttl.gz)
+  --input   PATH   Source .nt.gz file (or legacy .ttl.gz)  (default: data/lido-export.nt.gz)
   --output  PATH   SQLite output file   (default: data/lido.db)
   --download       Download the source file before building
 ```
@@ -153,8 +153,8 @@ The `metadata` table has 25 columns matching the `MAP_RS` keys in `rechtspraak-e
 
 ## How it works
 
-1. **Download** — `src/download.py` streams `lido-export.ttl.gz` from `linkeddata.overheid.nl` with a progress bar.
-2. **Convert** — `src/parse.py` pipes the decompressed Turtle through `serdi -l` (lax mode) or `rapper -q` to produce N-Triples, working around systematic syntax violations in the source file (invalid escape sequences, non-IRI characters).
+1. **Download** — `src/download.py` streams `lido-export.nt.gz` from `linkeddata.overheid.nl` with a progress bar. It retries on HTTP 429/5xx and fails if the response is not gzip, because the server answers missing files with an HTML error page and HTTP 200.
+2. **Read** — `src/parse.py` streams the decompressed N-Triples lines directly. For the legacy Turtle export (`.ttl.gz`) it instead pipes the input through `serdi -l` (lax mode) or `rapper -q`, working around syntax violations in that file (invalid escape sequences, non-IRI characters).
 3. **Parse** — Each N-Triple line is parsed by pyoxigraph. Triples whose subject matches `linkeddata.overheid.nl/terms/jurisprudentie/id/ECLI:…` are accumulated per case.
 4. **Insert** — Cases are batch-inserted into the `metadata` table in SQLite (10 000 rows per transaction).
 
