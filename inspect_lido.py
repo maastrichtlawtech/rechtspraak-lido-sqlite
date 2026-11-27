@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect the N-Triples output of lido-export.ttl.gz to discover data structure.
+"""Inspect the N-Triples output of lido-export.nt.gz to discover data structure.
 
 Two modes:
   subjects  (default) – show subject URI patterns and their top predicates
@@ -37,13 +37,13 @@ ECLI_IDENTIFIER = "http://purl.org/dc/terms/identifier"
 
 # ── mode: subjects ────────────────────────────────────────────────────────────
 
-def mode_subjects(ttl_gz_path: Path, skip: int, max_lines: int) -> None:
+def mode_subjects(export_path: Path, skip: int, max_lines: int) -> None:
     subject_prefixes: Counter[str] = Counter()
     subject_samples: dict[str, str] = {}
     predicate_by_prefix: dict[str, Counter[str]] = defaultdict(Counter)
     parsed = skipped = consumed = 0
 
-    for raw_line in _iter_ntriples(ttl_gz_path):
+    for raw_line in _iter_ntriples(export_path):
         if consumed < skip:
             consumed += 1
             continue
@@ -89,7 +89,7 @@ def mode_subjects(ttl_gz_path: Path, skip: int, max_lines: int) -> None:
 
 # ── mode: cases ───────────────────────────────────────────────────────────────
 
-def mode_cases(ttl_gz_path: Path, skip: int, max_lines: int) -> None:
+def mode_cases(export_path: Path, skip: int, max_lines: int) -> None:
     """Look for court-case evidence: ECLI identifiers and case-link objects."""
     # subjects whose dcterms:identifier value looks like an ECLI
     ecli_subjects: dict[str, str] = {}         # subject URI → ECLI value
@@ -100,7 +100,7 @@ def mode_cases(ttl_gz_path: Path, skip: int, max_lines: int) -> None:
 
     parsed = skipped = consumed = 0
 
-    for raw_line in _iter_ntriples(ttl_gz_path):
+    for raw_line in _iter_ntriples(export_path):
         if consumed < skip:
             consumed += 1
             continue
@@ -187,7 +187,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--input", "-i", type=Path, default=Path("data/lido-export.ttl.gz"))
+    parser.add_argument("--input", "-i", type=Path, default=Path("data/lido-export.nt.gz"))
     parser.add_argument("--mode", choices=["subjects", "cases"], default="subjects")
     parser.add_argument("--skip", "-s", type=int, default=0,
                         help="Skip this many N-Triple lines before sampling")
